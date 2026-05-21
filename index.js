@@ -1,14 +1,48 @@
-const unused = 42;
-var alsoUnused = "leftover";
+import * as Sentry from '@sentry/node';
 
-if (value == null) {
-  console.log("nope");
+Sentry.init({ dsn: process.env.SENTRY_DSN });
+Sentry.setTag('branch', process.env.VERSO_BRANCH ?? 'unknown');
+Sentry.setTag('dev_email', process.env.VERSO_DEV_EMAIL ?? '');
+
+function capture(label, fn) {
+  try {
+    fn();
+  } catch (err) {
+    Sentry.captureException(err);
+    console.log(`captured: ${label} -> ${err.name}: ${err.message}`);
+  }
 }
 
-function broken(a, b) {
-  console.log("debug", a);
-  return result != b;
+// A variety of demo errors so Verso shows multiple distinct groups.
+capture('ReferenceError', () => {
+  if (value == null) {
+    console.log('nope');
+  }
+});
+
+capture('TypeError (null member access)', () => {
+  const obj = null;
+  obj.method();
+});
+
+capture('TypeError (undefined forEach)', () => {
+  const arr = undefined;
+  arr.forEach(() => {});
+});
+
+capture('SyntaxError (bad JSON)', () => {
+  JSON.parse('{ broken json');
+});
+
+capture('Custom Error (business logic)', () => {
+  throw new Error('Checkout failed: payment gateway returned 502');
+});
+
+try {
+  await Promise.reject(new RangeError('Pagination cursor 999 out of range'));
+} catch (err) {
+  Sentry.captureException(err);
+  console.log(`captured: async RangeError -> ${err.name}: ${err.message}`);
 }
 
-const dup = 1;
-broken(dup, undefinedArg);
+await Sentry.flush(2000);
